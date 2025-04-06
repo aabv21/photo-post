@@ -1,0 +1,21 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY services/auth/package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy service files
+COPY services/auth/ ./
+
+# Set environment variables
+ENV NODE_ENV=development
+
+# Expose port
+EXPOSE 3001
+
+# Start the service
+CMD ["node", "index.js"] 

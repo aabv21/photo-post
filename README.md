@@ -22,24 +22,23 @@ This is a microservices-based social media application with the following servic
 
 To start all services using Docker Compose:
 
-\`\`\`bash
-
 # Build and start all containers
 
 docker-compose up --build
 
 # Run in detached mode
 
+```bash
 docker-compose up --build -d
-\`\`\`
+```
 
 ### Stopping the Application
 
 To stop all services:
 
-\`\`\`bash
+```bash
 docker-compose down
-\`\`\`
+```
 
 ## Services
 
@@ -96,20 +95,20 @@ docker-compose down
 
 Each service can be run locally for development:
 
-\`\`\`bash
+```bash
 cd services/<service-name>
 pnpm install
 pnpm dev
-\`\`\`
+```
 
 ### Running Tests
 
 To run tests for a specific service:
 
-\`\`\`bash
+```bash
 cd services/<service-name>
 pnpm test
-\`\`\`
+```
 
 ## Architecture
 

@@ -40,6 +40,8 @@ build/Release
 
 # Dependency directories
 node_modules/
+*/node_modules/
+services/*/node_modules/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -103,7 +105,7 @@ dist
 # vuepress build output
 .vuepress/dist
 
-# vuepress v2.x temp and cache directory
+# vitepress v2.x temp and cache directory
 .temp
 .cache
 
@@ -137,3 +139,29 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker volumes
+data/
+
+# Uploads directory
+uploads/*
+!uploads/.gitkeep
+
+# Logs directory
+logs/*
+!logs/.gitkeep
+
+# Build artifacts
+dist/
+build/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo

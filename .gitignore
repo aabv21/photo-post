@@ -40,6 +40,8 @@ build/Release
 
 # Dependency directories
 node_modules/
+*/node_modules/
+services/*/node_modules/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)
@@ -74,6 +76,9 @@ web_modules/
 
 # dotenv environment variable files
 .env
+.env.development
+.env.test
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
@@ -135,50 +140,28 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-# Service-specific ignores
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
 
-# Auth service
-services/auth/coverage/
-services/auth/dist/
-services/auth/build/
-services/auth/__snapshots__/
-services/auth/*.snap
+# Docker volumes
+data/
 
-# Users service
-services/users/coverage/
-services/users/dist/
-services/users/build/
-services/users/__snapshots__/
-services/users/*.snap
+# Uploads directory
+uploads/*
+!uploads/.gitkeep
 
-# Posts service
-services/posts/coverage/
-services/posts/dist/
-services/posts/build/
-services/posts/__snapshots__/
-services/posts/*.snap
-services/posts/uploads/
+# Logs directory
+logs/*
+!logs/.gitkeep
 
-# Likes service
-services/likes/coverage/
-services/likes/dist/
-services/likes/build/
-services/likes/__snapshots__/
-services/likes/*.snap
+# Build artifacts
+dist/
+build/
 
-# Gateway service
-services/gateway/coverage/
-services/gateway/dist/
-services/gateway/build/
-services/gateway/__snapshots__/
-services/gateway/*.snap
-
-# IDE files
+# IDE specific files
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS files
-.DS_Store
-Thumbs.db

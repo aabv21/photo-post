@@ -24,7 +24,9 @@ To start all services using Docker Compose:
 
 # Build and start all containers
 
+```bash
 docker-compose up --build
+```
 
 # Run in detached mode
 

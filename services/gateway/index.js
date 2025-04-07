@@ -156,25 +156,6 @@ app.use(
   )
 );
 
-// Public user routes
-app.get(
-  "/api/users/:id",
-  createProxyMiddleware(
-    createProxyConfig(process.env.USERS_SERVICE_URL || "http://users:3002", {
-      "^/api/users": "/api/users",
-    })
-  )
-);
-
-app.get(
-  "/api/users/search",
-  createProxyMiddleware(
-    createProxyConfig(process.env.USERS_SERVICE_URL || "http://users:3002", {
-      "^/api/users": "/api/users",
-    })
-  )
-);
-
 // Public post routes
 app.get(
   "/api/posts",
@@ -198,11 +179,11 @@ app.get(
 
 // Protected user routes
 app.use(
-  "/api/users/me",
+  "/api/users",
   authenticateJWT,
   createProxyMiddleware(
     createProxyConfig(process.env.USERS_SERVICE_URL || "http://users:3002", {
-      "^/api/users/me": "/api/users/me",
+      "^/api/users": "/api/users",
     })
   )
 );

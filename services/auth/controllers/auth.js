@@ -53,8 +53,6 @@ export const register = async (req, res) => {
     // Generate JWT token
     const { token } = await generateToken(newUser);
 
-    console.log(token);
-
     // Publish user creation event to Kafka
     try {
       await publishMessage("user-events", {
@@ -64,6 +62,7 @@ export const register = async (req, res) => {
           username: newUser.username,
           email: newUser.email,
           created_at: newUser.created_at,
+          full_name: "",
         },
       });
       logger.info(`Published user-created event for user ${newUser.id}`);

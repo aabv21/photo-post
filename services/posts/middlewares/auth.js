@@ -21,10 +21,7 @@ export const authenticateJWT = (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key"
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "jwt-secret");
     req.user = decoded;
 
     next();

@@ -14,22 +14,19 @@ export const authenticateJWT = (req, res, next) => {
   if (authHeader) {
     const token = authHeader.split(" ")[1];
 
-    jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key",
-      (err, user) => {
-        if (err) {
-          logger.warn(`JWT Authentication failed: ${err.message}`);
-          return res.status(403).json({
-            success: false,
-            message: "Invalid or expired token",
-          });
-        }
-
-        req.user = user;
-        next();
+    console.log(token, process.env.JWT_SECRET);
+    jwt.verify(token, process.env.JWT_SECRET || "jwt-secret", (err, user) => {
+      if (err) {
+        logger.warn(`JWT Authentication failed: ${err.message}`);
+        return res.status(403).json({
+          success: false,
+          message: "Invalid or expired token",
+        });
       }
-    );
+
+      req.user = user;
+      next();
+    });
   } else {
     logger.warn("JWT Authentication failed: No token provided");
     res.status(401).json({

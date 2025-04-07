@@ -1,5 +1,6 @@
 import { Kafka } from "kafkajs";
 import { logger } from "../middlewares/logger.js";
+import { createUserFromEvent } from "../controllers/users.js";
 
 /**
  * Kafka configuration for Users service
@@ -141,6 +142,53 @@ export const disconnect = async () => {
     return false;
   }
 };
+
+/**
+ * Initialize Kafka consumer with message handlers
+ * @returns {boolean} - Success status
+ */
+export const initializeKafkaConsumer = async () => {
+  try {
+    // Connect to Kafka
+    await connectConsumer();
+
+    // Subscribe to user-events topic
+    await subscribeToTopic("user-events");
+
+    // Start consuming messages with appropriate handlers
+    await startConsumer(async (topic, message) => {
+      if (topic === "user-events") {
+        if (message.event === "user-created") {
+          logger.info(
+            `Processing user-created event for user ${message.data.id}`
+          );
+          try {
+            await createUserFromEvent(message.data);
+          } catch (error) {
+            logger.error(`Failed to create user from event: ${error.message}`);
+          }
+        } else {
+          logger.info(`Received unknown event type: ${message.event}`);
+        }
+      }
+    });
+
+    logger.info("Kafka consumer initialized successfully");
+    return true;
+  } catch (error) {
+    logger.error(`Failed to initialize Kafka consumer: ${error.message}`);
+    return false;
+  }
+};
+
+// Start the Kafka consumer when the application starts
+initializeKafkaConsumer()
+  .then(() => {
+    logger.info("Kafka consumer initialized successfully");
+  })
+  .catch((error) => {
+    logger.error(`Failed to initialize Kafka consumer: ${error.message}`);
+  });
 
 // Export Kafka instances
 export { producer, consumer };

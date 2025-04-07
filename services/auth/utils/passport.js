@@ -6,7 +6,7 @@ import { Auth } from "../models/auth.js";
 const configurePassport = () => {
   const options = {
     jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-    secretOrKey: process.env.JWT_SECRET || "your-secret-key",
+    secretOrKey: process.env.JWT_SECRET || "jwt-secret",
   };
 
   passport.use(

@@ -9,8 +9,6 @@ export const validateGatewayRequest = (req, res, next) => {
       return next();
     }
 
-    console.log(req.headers);
-
     // Get gateway signature from header
     const signature = req.headers["x-gateway-signature"];
     if (!signature) {

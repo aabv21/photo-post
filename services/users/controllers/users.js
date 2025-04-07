@@ -197,7 +197,7 @@ export const createUserFromEvent = async (userData) => {
       id: userData.id,
       username: userData.username,
       email: userData.email,
-      full_name: userData.full_name || "",
+      full_name: userData.full_name || userData.username || "",
     });
 
     logger.info(`User created successfully from event: ${newUser.id}`);

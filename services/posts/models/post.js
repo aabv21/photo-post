@@ -16,25 +16,23 @@ const Post = sequelize.define(
     },
     description: {
       type: DataTypes.TEXT,
-      allowNull: true,
+      allowNull: false,
     },
     image_url: {
       type: DataTypes.STRING,
-      allowNull: false,
+      allowNull: true,
     },
   },
   {
     tableName: "posts",
     timestamps: true,
-    createdAt: "created_at",
-    updatedAt: "updated_at",
   }
 );
 
 // Initialize models
 async function initModels() {
   try {
-    await sequelize.sync();
+    await sequelize.sync({ alter: true });
     console.log("Post models synchronized successfully");
   } catch (error) {
     console.error("Error synchronizing post models:", error);

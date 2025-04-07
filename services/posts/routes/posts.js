@@ -5,7 +5,6 @@ import {
   createPost,
   updatePost,
   deletePost,
-  getAllPosts,
   getImage,
 } from "../controllers/posts.js";
 import { authenticateJWT } from "../middlewares/auth.js";
@@ -13,9 +12,8 @@ import { authenticateJWT } from "../middlewares/auth.js";
 const router = express.Router();
 
 // Public routes
-router.get("/", getAllPosts);
-router.get("/:id", getPostById);
-router.get("/users/:userId", getPostsByUserId);
+router.get("/:id", authenticateJWT, getPostById);
+router.get("/", authenticateJWT, getPostsByUserId);
 
 // Protected routes
 router.post("/", authenticateJWT, createPost);

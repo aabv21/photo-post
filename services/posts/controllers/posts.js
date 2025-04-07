@@ -31,7 +31,7 @@ const CACHE_TTL = 60 * 5; // 5 minutes
  */
 export const getPostsByUserId = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.params.userId;
     const { page = 1, limit = 10 } = req.query;
 
     const offset = (page - 1) * limit;
@@ -153,7 +153,7 @@ export const getPostById = async (req, res) => {
 export const createPost = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { caption } = req.body;
+    const { description } = req.body;
 
     // Validate request body
     const { error } = validatePostCreation(req.body);
@@ -166,8 +166,9 @@ export const createPost = async (req, res) => {
 
     // Create post
     const newPost = await Post.create({
-      user_id: userId,
-      caption,
+      user_id: +userId,
+      description,
+      image_url: null,
     });
 
     // Invalidate feed cache
@@ -211,7 +212,7 @@ export const updatePost = async (req, res) => {
       });
     }
 
-    const { caption } = req.body;
+    const { description } = req.body;
 
     const post = await Post.findByPk(id);
 
@@ -231,7 +232,7 @@ export const updatePost = async (req, res) => {
     }
 
     // Update post
-    post.caption = caption;
+    post.description = description;
     await post.save();
 
     return res.status(200).json({
@@ -301,59 +302,6 @@ export const deletePost = async (req, res) => {
     });
   } catch (error) {
     logger.error(`Delete post error: ${error.message}`, { stack: error.stack });
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-    });
-  }
-};
-
-/**
- * Get all posts (feed)
- * @param {Object} req - The request object
- * @param {Object} res - The response object
- * @returns {Object} - The posts object
- */
-export const getAllPosts = async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    const cacheKey = `posts:feed:page${page}:limit${limit}`;
-
-    // Try to get from cache first
-    const cachedPosts = await redisClient.get(cacheKey);
-    if (cachedPosts) {
-      return res.status(200).json(JSON.parse(cachedPosts));
-    }
-
-    const offset = (page - 1) * limit;
-
-    const { count, rows: posts } = await Post.findAndCountAll({
-      order: [["created_at", "DESC"]],
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-    });
-
-    const response = {
-      success: true,
-      data: posts,
-      pagination: {
-        total: count,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(count / limit),
-      },
-    };
-
-    // Cache the result
-    await redisClient.set(cacheKey, JSON.stringify(response), {
-      EX: CACHE_TTL,
-    });
-
-    return res.status(200).json(response);
-  } catch (error) {
-    logger.error(`Get all posts error: ${error.message}`, {
-      stack: error.stack,
-    });
     return res.status(500).json({
       success: false,
       message: "Internal server error",

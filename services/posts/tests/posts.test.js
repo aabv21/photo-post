@@ -52,7 +52,7 @@ describe("Posts Controller", () => {
       const post = {
         id: 1,
         user_id: 1,
-        caption: "Test post",
+        description: "Test post",
         image_url: "http://example.com/image.jpg",
         created_at: new Date(),
         updated_at: new Date(),
@@ -87,14 +87,14 @@ describe("Posts Controller", () => {
       // Arrange
       req.user.id = 1;
       req.body = {
-        caption: "New test post",
+        description: "New test post",
         image_url: "http://example.com/new-image.jpg",
       };
 
       Post.create.mockResolvedValue({
         id: 1,
         user_id: 1,
-        caption: "New test post",
+        description: "New test post",
         image_url: "http://example.com/new-image.jpg",
         created_at: new Date(),
       });
@@ -105,7 +105,7 @@ describe("Posts Controller", () => {
       // Assert
       expect(Post.create).toHaveBeenCalledWith({
         user_id: 1,
-        caption: "New test post",
+        description: "New test post",
         image_url: "http://example.com/new-image.jpg",
       });
       expect(res.status).toHaveBeenCalledWith(201);
@@ -125,8 +125,8 @@ describe("Posts Controller", () => {
       redisClient.get.mockResolvedValue(null);
 
       const posts = [
-        { id: 1, user_id: 1, caption: "Post 1", created_at: new Date() },
-        { id: 2, user_id: 2, caption: "Post 2", created_at: new Date() },
+        { id: 1, user_id: 1, description: "Post 1", created_at: new Date() },
+        { id: 2, user_id: 2, description: "Post 2", created_at: new Date() },
       ];
 
       Post.findAndCountAll.mockResolvedValue({

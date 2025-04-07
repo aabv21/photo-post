@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import loggerMiddleware, { logger } from "./middlewares/logger.js";
 import limiter from "./middlewares/limiter.js";
 import { validateGatewayRequest } from "./middlewares/gatewayAuth.js";
+import { uploadMiddleware } from "./middlewares/upload.js";
 
 // Routes
 import postsRouter from "./routes/posts.js";
@@ -34,13 +35,8 @@ app.use(loggerMiddleware);
 // Validate that requests are coming from the API Gateway
 app.use(validateGatewayRequest);
 
+app.use(uploadMiddleware);
 app.use(limiter);
-
-// Make multer available to routes
-app.use((req, res, next) => {
-  req.upload = upload;
-  next();
-});
 
 // Routes should come after all middleware
 app.use("/", postsRouter);

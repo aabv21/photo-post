@@ -156,25 +156,6 @@ app.use(
   )
 );
 
-// Public post routes
-app.get(
-  "/api/posts",
-  createProxyMiddleware(
-    createProxyConfig(process.env.POSTS_SERVICE_URL || "http://posts:3003", {
-      "^/api/posts": "/api/posts",
-    })
-  )
-);
-
-app.get(
-  "/api/posts/:id",
-  createProxyMiddleware(
-    createProxyConfig(process.env.POSTS_SERVICE_URL || "http://posts:3003", {
-      "^/api/posts": "/api/posts",
-    })
-  )
-);
-
 // Protected routes - require JWT authentication
 
 // Protected user routes
@@ -190,7 +171,7 @@ app.use(
 
 // Protected posts routes (create, update, delete)
 app.use(
-  ["/api/posts/create", "/api/posts/update", "/api/posts/delete"],
+  "/api/posts",
   authenticateJWT,
   createProxyMiddleware(
     createProxyConfig(process.env.POSTS_SERVICE_URL || "http://posts:3003", {

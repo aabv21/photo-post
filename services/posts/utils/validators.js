@@ -7,7 +7,7 @@ import Joi from "joi";
  */
 export const validatePostCreation = (data) => {
   const schema = Joi.object({
-    caption: Joi.string().allow("", null).max(2000),
+    description: Joi.string().allow("", null).max(2000),
   });
 
   return schema.validate(data);
@@ -20,7 +20,7 @@ export const validatePostCreation = (data) => {
  */
 export const validatePostUpdate = (data) => {
   const schema = Joi.object({
-    caption: Joi.string().allow("", null).max(2000),
+    description: Joi.string().allow("", null).max(2000),
   });
 
   return schema.validate(data);

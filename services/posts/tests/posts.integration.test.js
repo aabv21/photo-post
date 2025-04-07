@@ -12,7 +12,7 @@ describe("Posts Service Integration Tests", () => {
   // Test data
   const testUserId = 9999;
   const testPost = {
-    caption: "Integration Test Post",
+    description: "Integration Test Post",
     image_url: "http://example.com/test-image.jpg",
   };
   let createdPostId;
@@ -70,7 +70,7 @@ describe("Posts Service Integration Tests", () => {
       expect(response.body.message).toBe("Post created successfully");
       expect(response.body.data).toHaveProperty("id");
       expect(response.body.data.user_id).toBe(testUserId);
-      expect(response.body.data.caption).toBe(testPost.caption);
+      expect(response.body.data.description).toBe(testPost.description);
 
       // Save post ID for subsequent tests
       createdPostId = response.body.data.id;
@@ -85,7 +85,10 @@ describe("Posts Service Integration Tests", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data).toHaveProperty("id", createdPostId);
       expect(response.body.data).toHaveProperty("user_id", testUserId);
-      expect(response.body.data).toHaveProperty("caption", testPost.caption);
+      expect(response.body.data).toHaveProperty(
+        "description",
+        testPost.description
+      );
       expect(response.body.data).toHaveProperty("like_count", 5); // From mocked axios response
     });
 
@@ -104,7 +107,7 @@ describe("Posts Service Integration Tests", () => {
         (post) => post.id === createdPostId
       );
       expect(foundPost).toBeDefined();
-      expect(foundPost.caption).toBe(testPost.caption);
+      expect(foundPost.description).toBe(testPost.description);
     });
 
     it("should get all posts (feed)", async () => {
@@ -132,19 +135,19 @@ describe("Posts Service Integration Tests", () => {
         .set("x-gateway-signature", gatewaySignature)
         .set("x-user-id", testUserId.toString())
         .send({
-          caption: updatedCaption,
+          description: updatedCaption,
         });
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("caption", updatedCaption);
+      expect(response.body.data).toHaveProperty("description", updatedCaption);
 
       // Verify update was persisted
       const postResponse = await request(app)
         .get(`/api/posts/${createdPostId}`)
         .set("x-gateway-signature", gatewaySignature);
 
-      expect(postResponse.body.data.caption).toBe(updatedCaption);
+      expect(postResponse.body.data.description).toBe(updatedCaption);
     });
 
     it("should delete a post", async () => {

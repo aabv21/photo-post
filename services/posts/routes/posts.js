@@ -6,6 +6,7 @@ import {
   updatePost,
   deletePost,
   getAllPosts,
+  getImage,
 } from "../controllers/posts.js";
 import { authenticateJWT } from "../middlewares/auth.js";
 
@@ -20,5 +21,8 @@ router.get("/users/:userId", getPostsByUserId);
 router.post("/", authenticateJWT, createPost);
 router.put("/:id", authenticateJWT, updatePost);
 router.delete("/:id", authenticateJWT, deletePost);
+
+// Route for serving images with optional transformations
+router.get("/image/:filename", authenticateJWT, getImage);
 
 export default router;

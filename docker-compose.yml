@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # API Gateway
   gateway:
@@ -12,12 +10,16 @@ services:
     environment:
       - NODE_ENV=development
       - GATEWAY_SECRET=gateway-secret-key
+      - REDIS_HOST=redis-gateway
+      - REDIS_PORT=6379
       - KAFKA_BROKER=kafka:9092
     depends_on:
       - auth
       - users
       - posts
       - likes
+      - redis-gateway
+      - kafka
     networks:
       - photo-post-network
     restart: unless-stopped
@@ -40,7 +42,6 @@ services:
     volumes:
       - sqlite-auth-data:/data
     depends_on:
-      - sqlite-auth
       - redis-auth
       - kafka
     networks:
@@ -65,7 +66,6 @@ services:
     volumes:
       - sqlite-users-data:/data
     depends_on:
-      - sqlite-users
       - redis-users
       - kafka
     networks:
@@ -91,7 +91,6 @@ services:
       - sqlite-posts-data:/data
       - photo-uploads:/app/uploads
     depends_on:
-      - sqlite-posts
       - redis-posts
       - kafka
     networks:
@@ -116,62 +115,31 @@ services:
     volumes:
       - sqlite-likes-data:/data
     depends_on:
-      - sqlite-likes
       - redis-likes
       - kafka
     networks:
       - photo-post-network
     restart: unless-stopped
 
-  # SQLite instances
-  sqlite-auth:
-    image: keinos/sqlite3:latest
-    container_name: photo-post-sqlite-auth
-    volumes:
-      - sqlite-auth-data:/data
-    command: ["tail", "-f", "/dev/null"]
-    networks:
-      - photo-post-network
-    restart: unless-stopped
-
-  sqlite-users:
-    image: keinos/sqlite3:latest
-    container_name: photo-post-sqlite-users
-    volumes:
-      - sqlite-users-data:/data
-    command: ["tail", "-f", "/dev/null"]
-    networks:
-      - photo-post-network
-    restart: unless-stopped
-
-  sqlite-posts:
-    image: keinos/sqlite3:latest
-    container_name: photo-post-sqlite-posts
-    volumes:
-      - sqlite-posts-data:/data
-    command: ["tail", "-f", "/dev/null"]
-    networks:
-      - photo-post-network
-    restart: unless-stopped
-
-  sqlite-likes:
-    image: keinos/sqlite3:latest
-    container_name: photo-post-sqlite-likes
-    volumes:
-      - sqlite-likes-data:/data
-    command: ["tail", "-f", "/dev/null"]
-    networks:
-      - photo-post-network
-    restart: unless-stopped
-
   # Redis instances
+  redis-gateway:
+    image: redis:alpine
+    container_name: photo-post-redis-gateway
+    volumes:
+      - redis-gateway-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - photo-post-network
+    restart: unless-stopped
+
   redis-auth:
     image: redis:alpine
     container_name: photo-post-redis-auth
     volumes:
       - redis-auth-data:/data
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - photo-post-network
     restart: unless-stopped
@@ -182,7 +150,7 @@ services:
     volumes:
       - redis-users-data:/data
     ports:
-      - "6380:6379"
+      - "6381:6379"
     networks:
       - photo-post-network
     restart: unless-stopped
@@ -193,7 +161,7 @@ services:
     volumes:
       - redis-posts-data:/data
     ports:
-      - "6381:6379"
+      - "6382:6379"
     networks:
       - photo-post-network
     restart: unless-stopped
@@ -204,17 +172,21 @@ services:
     volumes:
       - redis-likes-data:/data
     ports:
-      - "6382:6379"
+      - "6383:6379"
     networks:
       - photo-post-network
     restart: unless-stopped
 
-  # Single Kafka instance with Zookeeper
+  # Kafka and Zookeeper services
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
     container_name: photo-post-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
     networks:
       - photo-post-network
     restart: unless-stopped
@@ -225,14 +197,23 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    volumes:
-      - kafka-data:/var/lib/kafka/data
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      # Add this to allow topic deletion
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      # Add this to force a clean start
+      KAFKA_LOG_DIRS: /tmp/kafka-logs
+    # Use tmpfs for Kafka data to ensure clean start
+    tmpfs:
+      - /tmp/kafka-logs
     networks:
       - photo-post-network
     restart: unless-stopped
@@ -253,6 +234,8 @@ volumes:
     driver: local
 
   # Redis data volumes
+  redis-gateway-data:
+    driver: local
   redis-auth-data:
     driver: local
   redis-users-data:
@@ -263,7 +246,9 @@ volumes:
     driver: local
 
   # Single Kafka data volume
-  kafka-data:
+  zookeeper-data:
+    driver: local
+  zookeeper-log:
     driver: local
 
   # Photo uploads volume

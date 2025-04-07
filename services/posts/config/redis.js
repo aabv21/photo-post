@@ -1,32 +1,41 @@
 import { createClient } from "redis";
+import { logger } from "../middlewares/logger.js";
 
 const username = process.env.REDIS_USERNAME;
 const password = process.env.REDIS_PASSWORD;
-const host = process.env.REDIS_HOST;
-const port = process.env.REDIS_PORT;
+const host = process.env.REDIS_HOST || "redis-posts";
+const port = process.env.REDIS_PORT || 6379;
 const config = { username, password, socket: { host, port } };
 
 // Client
 const redisClient = createClient(config);
-redisClient.on("error", (err) => console.log("Redis Client Error", err));
-redisClient.on("ready", () => console.log("Redis Client Ready"));
-await redisClient.connect();
+redisClient.on("error", (err) => logger.error("Redis Client Error", err));
+redisClient.on("ready", () => logger.info("Redis Client Ready"));
 
-// Clear all data in the database
-redisClient.flushDb();
+// Connect to Redis
+const connectRedis = async () => {
+  try {
+    await redisClient.connect();
+    logger.info("Connected to Redis successfully");
+  } catch (error) {
+    logger.error(`Failed to connect to Redis: ${error.message}`);
+    // Retry connection after delay
+    setTimeout(connectRedis, 5000);
+  }
+};
 
-// Suscriber
-const redisSubscriber = createClient(config);
-redisSubscriber.on("error", (err) =>
-  console.log("Redis Subscriber Error", err)
-);
-redisSubscriber.on("ready", () => console.log("Redis Subscriber Ready"));
-await redisSubscriber.connect();
+connectRedis();
 
-// Publisher
-const redisPublisher = createClient(config);
-redisPublisher.on("error", (err) => console.log("Redis Publisher Error", err));
-redisPublisher.on("ready", () => console.log("Redis Publisher Ready"));
-await redisPublisher.connect();
+// Graceful shutdown
+process.on("SIGTERM", async () => {
+  try {
+    await redisClient.disconnect();
+    logger.info("Redis client disconnected");
+  } catch (error) {
+    logger.error(`Error disconnecting Redis client: ${error.message}`);
+  } finally {
+    process.exit(0);
+  }
+});
 
-export { redisClient, redisSubscriber, redisPublisher };
+export { redisClient };

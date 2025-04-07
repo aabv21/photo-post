@@ -1,7 +1,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import { createProxyMiddleware, fixRequestBody } from "http-proxy-middleware";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import dotenv from "dotenv";
 
 // Load environment variables
@@ -16,248 +16,217 @@ import {
   generateGatewaySignature,
 } from "./middlewares/auth.js";
 
-// Import controllers
-import * as userController from "./controllers/userController.js";
-
 // Import Redis and Kafka configurations
 import "./config/redis.js";
 import "./config/kafka.js";
 
 const app = express();
 
-// Apply CORS and body parsing middleware first
+// Apply CORS middleware
 app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
 
 // Apply logger middleware
 app.use(loggerMiddleware);
 
 // Health check endpoint (public)
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    message: "API Gateway is running",
-    timestamp: new Date().toISOString(),
+  // For this specific endpoint, parse the body
+  bodyParser.json()(req, res, () => {
+    res.status(200).json({
+      status: "ok",
+      message: "API Gateway is running",
+      timestamp: new Date().toISOString(),
+    });
   });
 });
+
+// Custom middleware to add gateway signature to all requests
+app.use((req, res, next) => {
+  const signature = generateGatewaySignature();
+  logger.info(
+    `Adding gateway signature to request: ${signature.substring(0, 20)}...`
+  );
+  req.headers["x-gateway-signature"] = signature;
+  next();
+});
+
+// Create a reusable proxy configuration function
+const createProxyConfig = (targetUrl, pathRewrite, additionalHandlers = {}) => {
+  return {
+    target: targetUrl,
+    changeOrigin: true,
+    pathRewrite: pathRewrite,
+    onProxyReq: (proxyReq, req, res) => {
+      // Forward the gateway signature
+      if (req.headers["x-gateway-signature"]) {
+        proxyReq.setHeader(
+          "x-gateway-signature",
+          req.headers["x-gateway-signature"]
+        );
+        logger.info("Forwarding gateway signature to service");
+      }
+
+      // Forward user ID from JWT if available
+      if (req.user && req.user.id) {
+        proxyReq.setHeader("x-user-id", req.user.id);
+        logger.info(`Forwarding user ID: ${req.user.id}`);
+      }
+
+      // Handle request body - only if Content-Type is application/json
+      if (
+        req.headers["content-type"] &&
+        req.headers["content-type"].includes("application/json")
+      ) {
+        // Parse the body only if it hasn't been parsed yet
+        if (!req.body) {
+          let bodyData = "";
+          req.on("data", (chunk) => {
+            bodyData += chunk.toString();
+          });
+          req.on("end", () => {
+            if (bodyData) {
+              try {
+                req.body = JSON.parse(bodyData);
+                // Write the body to the proxy request
+                proxyReq.setHeader("Content-Type", "application/json");
+                proxyReq.setHeader(
+                  "Content-Length",
+                  Buffer.byteLength(bodyData)
+                );
+                proxyReq.write(bodyData);
+              } catch (e) {
+                logger.error(`Error parsing request body: ${e.message}`);
+              }
+            }
+          });
+        } else {
+          // Body already parsed, write it to the proxy request
+          const bodyData = JSON.stringify(req.body);
+          proxyReq.setHeader("Content-Type", "application/json");
+          proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+          proxyReq.write(bodyData);
+        }
+      }
+
+      // Call additional handlers if provided
+      if (additionalHandlers.onProxyReq) {
+        additionalHandlers.onProxyReq(proxyReq, req, res);
+      }
+    },
+    onProxyRes: (proxyRes, req, res) => {
+      logger.info(`Service Response: ${proxyRes.statusCode}`);
+
+      // Call additional handlers if provided
+      if (additionalHandlers.onProxyRes) {
+        additionalHandlers.onProxyRes(proxyRes, req, res);
+      }
+    },
+    onError: (err, req, res) => {
+      logger.error(`Service Proxy Error: ${err.message}`);
+      res.status(500).json({
+        success: false,
+        error: "Service Error",
+        message: `Failed to connect to service: ${err.message}`,
+      });
+
+      // Call additional handlers if provided
+      if (additionalHandlers.onError) {
+        additionalHandlers.onError(err, req, res);
+      }
+    },
+  };
+};
 
 // Auth Service Routes (public)
 app.use(
   "/api/auth",
-  createProxyMiddleware({
-    target: process.env.AUTH_SERVICE_URL || "http://auth:3001",
-    changeOrigin: true,
-    pathRewrite: {
-      "^/api/auth": "/api/auth",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature to requests using JWT
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-      fixRequestBody(proxyReq, req);
-    },
-    onProxyRes: (proxyRes, req, res) => {
-      logger.info(`Auth Service Response: ${proxyRes.statusCode}`);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Auth Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        error: "Auth Service Error",
-        message: "Failed to connect to authentication service",
-      });
-    },
-  })
+  createProxyMiddleware(
+    createProxyConfig(
+      process.env.AUTH_SERVICE_URL || "http://auth:3001",
+      { "^/api/auth": "/api/auth" },
+      {
+        onProxyRes: (proxyRes, req, res) => {
+          logger.info(`Auth Service Response: ${proxyRes.statusCode}`);
+        },
+        onError: (err, req, res) => {
+          logger.error(`Auth Service Proxy Error: ${err.message}`);
+        },
+      }
+    )
+  )
 );
 
 // Public user routes
 app.get(
   "/api/users/:id",
-  createProxyMiddleware({
-    target: process.env.USERS_SERVICE_URL || "http://users:3002",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.USERS_SERVICE_URL || "http://users:3002", {
       "^/api/users": "/api/users",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature to requests using JWT
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Users Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to users service",
-      });
-    },
-  })
+    })
+  )
 );
 
 app.get(
   "/api/users/search",
-  createProxyMiddleware({
-    target: process.env.USERS_SERVICE_URL || "http://users:3002",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.USERS_SERVICE_URL || "http://users:3002", {
       "^/api/users": "/api/users",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature to requests using JWT
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Users Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to users service",
-      });
-    },
-  })
+    })
+  )
 );
 
 // Public post routes
 app.get(
   "/api/posts",
-  createProxyMiddleware({
-    target: process.env.POSTS_SERVICE_URL || "http://posts:3003",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.POSTS_SERVICE_URL || "http://posts:3003", {
       "^/api/posts": "/api/posts",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature to requests using JWT
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Posts Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to posts service",
-      });
-    },
-  })
+    })
+  )
 );
 
 app.get(
   "/api/posts/:id",
-  createProxyMiddleware({
-    target: process.env.POSTS_SERVICE_URL || "http://posts:3003",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.POSTS_SERVICE_URL || "http://posts:3003", {
       "^/api/posts": "/api/posts",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature to requests using JWT
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Posts Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to posts service",
-      });
-    },
-  })
+    })
+  )
 );
 
 // Protected routes - require JWT authentication
-// Apply authenticateJWT middleware to all protected routes
 
 // Protected user routes
 app.use(
   "/api/users/me",
   authenticateJWT,
-  createProxyMiddleware({
-    target: process.env.USERS_SERVICE_URL || "http://users:3002",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.USERS_SERVICE_URL || "http://users:3002", {
       "^/api/users/me": "/api/users/me",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature using JWT and forward user info
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-
-      // Forward user ID from JWT
-      if (req.user && req.user.id) {
-        proxyReq.setHeader("x-user-id", req.user.id);
-      }
-
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Users Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to users service",
-      });
-    },
-  })
+    })
+  )
 );
 
 // Protected posts routes (create, update, delete)
 app.use(
   ["/api/posts/create", "/api/posts/update", "/api/posts/delete"],
   authenticateJWT,
-  createProxyMiddleware({
-    target: process.env.POSTS_SERVICE_URL || "http://posts:3003",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.POSTS_SERVICE_URL || "http://posts:3003", {
       "^/api/posts": "/api/posts",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature using JWT and forward user info
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-
-      // Forward user ID from JWT
-      if (req.user && req.user.id) {
-        proxyReq.setHeader("x-user-id", req.user.id);
-      }
-
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Posts Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to posts service",
-      });
-    },
-  })
+    })
+  )
 );
 
 // Protected likes routes
 app.use(
   "/api/likes",
   authenticateJWT,
-  createProxyMiddleware({
-    target: process.env.LIKES_SERVICE_URL || "http://likes:3004",
-    changeOrigin: true,
-    pathRewrite: {
+  createProxyMiddleware(
+    createProxyConfig(process.env.LIKES_SERVICE_URL || "http://likes:3004", {
       "^/api/likes": "/api/likes",
-    },
-    onProxyReq: (proxyReq, req, res) => {
-      // Add gateway signature using JWT and forward user info
-      proxyReq.setHeader("x-gateway-signature", generateGatewaySignature());
-
-      // Forward user ID from JWT
-      if (req.user && req.user.id) {
-        proxyReq.setHeader("x-user-id", req.user.id);
-      }
-
-      fixRequestBody(proxyReq, req);
-    },
-    onError: (err, req, res) => {
-      logger.error(`Likes Service Proxy Error: ${err.message}`);
-      res.status(500).json({
-        success: false,
-        message: "Failed to connect to likes service",
-      });
-    },
-  })
+    })
+  )
 );
 
 // Static files for uploads
@@ -273,21 +242,11 @@ app.use((req, res) => {
   logger.warn(`Route not found: ${req.method} ${req.originalUrl}`);
   res.status(404).json({
     success: false,
-    error: "Not Found",
-    message: `Route ${req.method} ${req.originalUrl} not found`,
+    message: "Route not found",
   });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  logger.error(`Gateway Error: ${err.message}`, { stack: err.stack });
-  res.status(500).json({
-    success: false,
-    error: "Internal Server Error",
-    message: "An unexpected error occurred",
-  });
-});
-
+// Start the server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   logger.info(`API Gateway running on port ${PORT}`);

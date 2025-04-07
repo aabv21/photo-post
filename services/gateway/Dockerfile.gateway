@@ -18,4 +18,4 @@ ENV NODE_ENV=development
 EXPOSE 3000
 
 # Start the service
-CMD ["node", "index.js"] 
+CMD ["node", "index.js"]

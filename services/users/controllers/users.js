@@ -1,7 +1,11 @@
 import User from "../models/user.js";
 import { Op } from "sequelize";
 import { logger } from "../middlewares/logger.js";
-import { validateUserUpdate } from "../utils/validators.js";
+import {
+  validateUserUpdate,
+  validateSearchQuery,
+  validatePagination,
+} from "../utils/validators.js";
 import { redisClient } from "../config/redis.js";
 
 // Cache TTL in seconds
@@ -118,7 +122,7 @@ export const updateUser = async (req, res) => {
     const userId = req.user.id;
 
     // Validate request body
-    const { error } = validateUserUpdate(req.body);
+    const { error, value } = validateUserUpdate(req.body);
     if (error) {
       return res.status(400).json({
         success: false,
@@ -126,7 +130,7 @@ export const updateUser = async (req, res) => {
       });
     }
 
-    const { full_name } = req.body;
+    const { full_name, bio } = value;
 
     // Find user
     const user = await User.findByPk(userId);
@@ -139,10 +143,11 @@ export const updateUser = async (req, res) => {
     }
 
     // Update user
-    await user.update({
-      full_name: full_name !== undefined ? full_name : user.full_name,
-      bio: bio !== undefined ? bio : user.bio,
-    });
+    const updateData = {};
+    if (full_name !== undefined) updateData.full_name = full_name;
+    if (bio !== undefined) updateData.bio = bio;
+
+    await user.update(updateData);
 
     // Invalidate cache
     await redisClient.del(`user:${userId}`);
@@ -155,6 +160,7 @@ export const updateUser = async (req, res) => {
         username: user.username,
         email: user.email,
         full_name: user.full_name,
+        bio: user.bio,
         updated_at: user.updated_at,
       },
     });
@@ -212,16 +218,30 @@ export const createUserFromEvent = async (userData) => {
  */
 export const searchUsers = async (req, res) => {
   try {
-    const { query } = req.query;
-
-    if (!query || query.length < 3) {
+    // Validate search query
+    const { error, value } = validateSearchQuery(req.query);
+    if (error) {
       return res.status(400).json({
         success: false,
-        message: "Search query must be at least 3 characters",
+        message: error.details[0].message,
       });
     }
 
-    const users = await User.findAll({
+    const { query } = value;
+
+    // Validate pagination
+    const paginationValidation = validatePagination(req.query);
+    if (paginationValidation.error) {
+      return res.status(400).json({
+        success: false,
+        message: paginationValidation.error.details[0].message,
+      });
+    }
+
+    const { page, limit } = paginationValidation.value;
+    const offset = (page - 1) * limit;
+
+    const { count, rows: users } = await User.findAndCountAll({
       where: {
         [Op.or]: [
           { username: { [Op.like]: `%${query}%` } },
@@ -229,12 +249,19 @@ export const searchUsers = async (req, res) => {
         ],
       },
       attributes: ["id", "username", "full_name"],
-      limit: 20,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
     });
 
     return res.status(200).json({
       success: true,
       data: users,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(count / limit),
+      },
     });
   } catch (error) {
     logger.error(`Search users error: ${error.message}`, {

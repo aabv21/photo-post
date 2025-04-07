@@ -1,195 +1,146 @@
 import { Kafka } from "kafkajs";
-import { redisClient } from "./redis.js";
 import { logger } from "../middlewares/logger.js";
 
-// Kafka configuration
+/**
+ * Kafka configuration with retry mechanism
+ * This setup allows for resilient connections to the Kafka broker
+ */
 const kafka = new Kafka({
   clientId: "gateway-service",
-  brokers: process.env.KAFKA_BROKER
-    ? [process.env.KAFKA_BROKER]
-    : ["localhost:9092"],
-  ssl: process.env.KAFKA_SSL === "true",
-  sasl:
-    process.env.KAFKA_SASL === "true"
-      ? {
-          mechanism: process.env.KAFKA_SASL_MECHANISM || "plain",
-          username: process.env.KAFKA_SASL_USERNAME,
-          password: process.env.KAFKA_SASL_PASSWORD,
-        }
-      : undefined,
-  connectionTimeout: 3000,
+  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
   retry: {
-    initialRetryTime: 100,
-    retries: 8,
+    initialRetryTime: 1000,
+    retries: 10,
   },
 });
 
-// Producer instance
+// Initialize producer and consumer instances
 const producer = kafka.producer();
-
-// Consumer instance
 const consumer = kafka.consumer({ groupId: "gateway-group" });
 
-// Initialize producer
-const initProducer = async () => {
+/**
+ * Connect to Kafka producer with retry mechanism
+ * @returns {Object} - Connected Kafka producer
+ */
+export const connectProducer = async () => {
   try {
     await producer.connect();
     logger.info("Kafka producer connected successfully");
+    return producer;
   } catch (error) {
     logger.error(`Failed to connect Kafka producer: ${error.message}`);
-    // Retry connection after delay
-    setTimeout(initProducer, 5000);
-  }
-};
-
-// Initialize consumer
-const initConsumer = async () => {
-  try {
-    await consumer.connect();
-    logger.info("Kafka consumer connected successfully");
-
-    // Subscribe to auth topics
-    await consumer.subscribe({ topics: ["auth-events"], fromBeginning: false });
-
-    // Start consuming messages
-    await consumer.run({
-      eachMessage: async ({ topic, partition, message }) => {
-        try {
-          const messageValue = JSON.parse(message.value.toString());
-          logger.info(`Received message from topic ${topic}: ${message.value}`);
-
-          // Handle different event types
-          switch (messageValue.event) {
-            case "user_login":
-              await handleUserLogin(messageValue.data);
-              break;
-            case "user_logout":
-              await handleUserLogout(messageValue.data);
-              break;
-            case "token_invalidated":
-              await handleTokenInvalidated(messageValue.data);
-              break;
-            default:
-              logger.warn(`Unknown event type: ${messageValue.event}`);
-          }
-        } catch (error) {
-          logger.error(`Error processing Kafka message: ${error.message}`, {
-            stack: error.stack,
-          });
-        }
-      },
-    });
-  } catch (error) {
-    logger.error(`Failed to connect Kafka consumer: ${error.message}`);
-    // Retry connection after delay
-    setTimeout(initConsumer, 5000);
-  }
-};
-
-// Handle user login event
-const handleUserLogin = async (data) => {
-  try {
-    const { token, user, expiresIn } = data;
-    const tokenKey = `auth:token:${token}`;
-
-    // Store token data in Redis
-    await redisClient.set(tokenKey, JSON.stringify(user), {
-      EX: expiresIn,
-    });
-
-    // Store user session
-    const userSessionsKey = `auth:user:${user.id}:sessions`;
-    await redisClient.sAdd(userSessionsKey, token);
-
-    logger.info(`User login session stored for user ${user.id}`);
-  } catch (error) {
-    logger.error(`Error handling user login event: ${error.message}`, {
-      stack: error.stack,
-    });
-  }
-};
-
-// Handle user logout event
-const handleUserLogout = async (data) => {
-  try {
-    const { token, userId } = data;
-    const tokenKey = `auth:token:${token}`;
-
-    // Remove token from Redis
-    await redisClient.del(tokenKey);
-
-    // Remove token from user sessions
-    if (userId) {
-      const userSessionsKey = `auth:user:${userId}:sessions`;
-      await redisClient.sRem(userSessionsKey, token);
+    // Manual retry after a delay in non-test environments
+    if (process.env.NODE_ENV !== "test") {
+      logger.info("Retrying Kafka connection in 5 seconds...");
+      setTimeout(connectProducer, 5000);
     }
-
-    logger.info(`User logout processed for token ${token}`);
-  } catch (error) {
-    logger.error(`Error handling user logout event: ${error.message}`, {
-      stack: error.stack,
-    });
-  }
-};
-
-// Handle token invalidated event
-const handleTokenInvalidated = async (data) => {
-  try {
-    const { token } = data;
-    const tokenKey = `auth:token:${token}`;
-
-    // Remove token from Redis
-    await redisClient.del(tokenKey);
-
-    logger.info(`Token invalidated: ${token}`);
-  } catch (error) {
-    logger.error(`Error handling token invalidated event: ${error.message}`, {
-      stack: error.stack,
-    });
-  }
-};
-
-// Initialize Kafka
-initProducer();
-initConsumer();
-
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  try {
-    await consumer.disconnect();
-    logger.info("Kafka consumer disconnected");
-
-    await producer.disconnect();
-    logger.info("Kafka producer disconnected");
-  } catch (error) {
-    logger.error(`Error disconnecting Kafka: ${error.message}`);
-  } finally {
-    process.exit(0);
-  }
-});
-
-// Publish message to Kafka topic
-export const publishMessage = async (topic, message) => {
-  try {
-    if (!producer || !producer.isConnected) {
-      throw new Error("Kafka producer not connected");
-    }
-
-    await producer.send({
-      topic,
-      messages: [
-        {
-          value: JSON.stringify(message),
-          timestamp: Date.now().toString(),
-        },
-      ],
-    });
-
-    return true;
-  } catch (error) {
-    logger.error(`Failed to publish message to Kafka: ${error.message}`);
     throw error;
   }
 };
 
-export { kafka, producer, consumer };
+/**
+ * Publish a message to a Kafka topic
+ * @param {string} topic - The Kafka topic to publish to
+ * @param {Object} message - The message object to publish
+ * @returns {boolean} - Success status
+ */
+export const publishMessage = async (topic, message) => {
+  try {
+    // Ensure producer is connected before sending
+    if (!producer.isConnected) {
+      await connectProducer();
+    }
+
+    // Send message to Kafka topic
+    await producer.send({
+      topic,
+      messages: [{ value: JSON.stringify(message) }],
+    });
+
+    logger.info(`Message published to topic ${topic}`);
+    return true;
+  } catch (error) {
+    logger.error(`Error publishing message to Kafka: ${error.message}`);
+    return false;
+  }
+};
+
+/**
+ * Connect to Kafka consumer
+ * @returns {Object} - Connected Kafka consumer
+ */
+export const connectConsumer = async () => {
+  try {
+    await consumer.connect();
+    logger.info("Kafka consumer connected successfully");
+    return consumer;
+  } catch (error) {
+    logger.error(`Failed to connect Kafka consumer: ${error.message}`);
+    throw error;
+  }
+};
+
+/**
+ * Subscribe to a Kafka topic
+ * @param {string} topic - The Kafka topic to subscribe to
+ * @returns {boolean} - Success status
+ */
+export const subscribeToTopic = async (topic) => {
+  try {
+    await consumer.subscribe({ topic, fromBeginning: true });
+    logger.info(`Subscribed to topic ${topic}`);
+    return true;
+  } catch (error) {
+    logger.error(`Error subscribing to topic ${topic}: ${error.message}`);
+    return false;
+  }
+};
+
+/**
+ * Start consuming messages from subscribed topics
+ * @param {Function} messageHandler - Function to handle received messages
+ * @returns {boolean} - Success status
+ */
+export const startConsumer = async (messageHandler) => {
+  try {
+    await consumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        const value = message.value.toString();
+        logger.info(`Received message from topic ${topic}: ${value}`);
+
+        try {
+          // Parse and process the message
+          const parsedMessage = JSON.parse(value);
+          await messageHandler(topic, parsedMessage);
+        } catch (error) {
+          logger.error(`Error processing message: ${error.message}`);
+        }
+      },
+    });
+
+    logger.info("Kafka consumer started");
+    return true;
+  } catch (error) {
+    logger.error(`Error starting Kafka consumer: ${error.message}`);
+    return false;
+  }
+};
+
+/**
+ * Disconnect from Kafka producer and consumer
+ * @returns {boolean} - Success status
+ */
+export const disconnect = async () => {
+  try {
+    await producer.disconnect();
+    await consumer.disconnect();
+    logger.info("Kafka producer and consumer disconnected");
+    return true;
+  } catch (error) {
+    logger.error(`Error disconnecting from Kafka: ${error.message}`);
+    return false;
+  }
+};
+
+// Export Kafka instances
+export { producer, consumer };

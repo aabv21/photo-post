@@ -2,11 +2,22 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install build dependencies for SQLite
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    gcc \
+    python3-dev \
+    musl-dev
 # Copy package files
 COPY services/likes/package*.json ./
 
 # Install dependencies
 RUN npm install
+# Rebuild sqlite3 specifically
+RUN npm rebuild sqlite3 --build-from-source
 
 # Copy service files
 COPY services/likes/ ./
@@ -18,4 +29,4 @@ ENV NODE_ENV=development
 EXPOSE 3004
 
 # Start the service
-CMD ["node", "index.js"] 
+CMD ["node", "index.js"]

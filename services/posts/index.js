@@ -1,6 +1,8 @@
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // Middlewares
 import loggerMiddleware, { logger } from "./middlewares/logger.js";
@@ -19,6 +21,10 @@ import "./config/kafka.js";
 const app = express();
 const PORT = process.env.PORT || 3003;
 
+// Get the current directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
@@ -30,9 +36,6 @@ app.use(validateGatewayRequest);
 
 app.use(limiter);
 
-// Serve static files from uploads directory
-app.use("/uploads", express.static(uploadsDir));
-
 // Make multer available to routes
 app.use((req, res, next) => {
   req.upload = upload;
@@ -40,7 +43,10 @@ app.use((req, res, next) => {
 });
 
 // Routes should come after all middleware
-app.use("/api/posts", postsRouter);
+app.use("/", postsRouter);
+
+// Configure middleware to serve static files
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Health check route
 app.get("/health", (req, res) => {

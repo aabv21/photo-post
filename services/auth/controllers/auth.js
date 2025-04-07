@@ -13,6 +13,7 @@ import { logger } from "../middlewares/logger.js";
  * @returns {Object} - The registered user object
  */
 export const register = async (req, res) => {
+  console.log(req.body);
   try {
     // Validate request body
     const { error } = validateRegistration(req.body);
@@ -51,6 +52,8 @@ export const register = async (req, res) => {
 
     // Generate JWT token
     const { token } = await generateToken(newUser);
+
+    console.log(token);
 
     // Publish user creation event to Kafka
     try {
@@ -207,7 +210,7 @@ export const logout = async (req, res) => {
  * @param {Object} res - The response object
  * @returns {Object} - The current user object
  */
-export const getCurrentUser = async (req, res) => {
+export const getCurrentAuth = async (req, res) => {
   try {
     // User is already authenticated by passport middleware
     const user = await Auth.findByPk(req.user.id, {

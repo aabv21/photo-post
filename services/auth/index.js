@@ -4,14 +4,14 @@ import cors from "cors";
 import morgan from "morgan";
 
 // Middlewares
-import loggerMiddleware, { logger } from "./middlewares/logger";
-import limiter from "./middlewares/limiter";
-import debounce from "./middlewares/debounce";
+import loggerMiddleware, { logger } from "./middlewares/logger.js";
+import limiter from "./middlewares/limiter.js";
+import debounce from "./middlewares/debounce.js";
 import configurePassport from "./utils/passport.js";
 import { validateGatewayRequest } from "./middlewares/gatewayAuth.js";
 
 // Routes
-import authRouter from "./routes/auth";
+import authRouter from "./routes/auth.js";
 
 // import config
 import "./config/sqlite.js";
@@ -43,10 +43,9 @@ app.use((req, res, next) => {
 });
 
 // Middleware
-app.use(loggerMiddleware);
-app.use(responseHandler);
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(loggerMiddleware);
 app.use(cors());
 app.use(debounce); // Add debounce before rate limiter
 app.use(limiter);
@@ -60,7 +59,7 @@ const passport = configurePassport();
 app.use(passport.initialize());
 
 // Routes should come after all middleware
-app.use("/auth", authRouter);
+app.use("/api/auth", authRouter);
 
 // Health check route
 app.get("/health", (req, res) => {

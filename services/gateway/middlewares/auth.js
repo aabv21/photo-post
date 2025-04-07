@@ -3,103 +3,71 @@ import { redisClient } from "../config/redis.js";
 import { logger } from "./logger.js";
 
 /**
- * Middleware to authenticate user token
+ * Middleware to authenticate JWT tokens
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  * @param {Function} next - Express next function
  */
-export const authenticateJWT = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
+export const authenticateJWT = (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
-    if (!authHeader) {
-      return res.status(401).json({
-        success: false,
-        message: "Access denied. No token provided.",
-      });
-    }
-
+  if (authHeader) {
     const token = authHeader.split(" ")[1];
 
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Access denied. Invalid token format.",
-      });
-    }
+    jwt.verify(
+      token,
+      process.env.JWT_SECRET || "your-secret-key",
+      (err, user) => {
+        if (err) {
+          logger.warn(`JWT Authentication failed: ${err.message}`);
+          return res.status(403).json({
+            success: false,
+            message: "Invalid or expired token",
+          });
+        }
 
-    // Verify token exists in Redis
-    const tokenKey = `auth:token:${token}`;
-    const tokenData = await redisClient.get(tokenKey);
-
-    if (!tokenData) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid or expired token.",
-      });
-    }
-
-    // Verify JWT signature
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || "jwt-secret");
-      req.user = decoded;
-
-      // Refresh token expiry in Redis (extend session)
-      await redisClient.expire(tokenKey, 60 * 60 * 24 * 7); // 7 days
-
-      next();
-    } catch (error) {
-      // If token is invalid, remove it from Redis
-      await redisClient.del(tokenKey);
-
-      if (error.name === "TokenExpiredError") {
-        return res.status(401).json({
-          success: false,
-          message: "Token expired",
-        });
+        req.user = user;
+        next();
       }
-
-      if (error.name === "JsonWebTokenError") {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid token",
-        });
-      }
-
-      return res.status(401).json({
-        success: false,
-        message: "Invalid token signature.",
-      });
-    }
-  } catch (error) {
-    logger.error(`Authentication error: ${error.message}`, {
-      stack: error.stack,
-    });
-    return res.status(500).json({
+    );
+  } else {
+    logger.warn("JWT Authentication failed: No token provided");
+    res.status(401).json({
       success: false,
-      message: "Internal server error during authentication.",
+      message: "Authentication token is required",
     });
   }
 };
 
 /**
- * Generate gateway signature using JWT
- * @returns {String} JWT token for gateway signature
+ * Generate a signature for internal service communication
+ * @returns {String} JWT token for gateway authentication
  */
 export const generateGatewaySignature = () => {
-  // Create payload with timestamp and random nonce for security
-  const payload = {
-    source: "gateway",
-    timestamp: Date.now(),
-    nonce: Math.random().toString(36).substring(2, 15),
-  };
+  try {
+    const gatewaySecret = process.env.GATEWAY_SECRET || "gateway-secret-key";
 
-  // Sign with gateway secret
-  return jwt.sign(
-    payload,
-    process.env.GATEWAY_SECRET || "gateway-secret-key",
-    { expiresIn: "1h" } // Short expiry for security
-  );
+    if (!gatewaySecret) {
+      logger.error("Gateway secret is not defined");
+      return "";
+    }
+
+    // Create a JWT token with gateway identity
+    const token = jwt.sign(
+      {
+        service: "api-gateway",
+        timestamp: Date.now(),
+      },
+      gatewaySecret,
+      { expiresIn: "1h" }
+    );
+
+    logger.debug("Gateway signature generated successfully");
+    return token;
+  } catch (error) {
+    logger.error(`Error generating gateway signature: ${error.message}`);
+    return "";
+  }
 };
 
 /**

@@ -5,7 +5,7 @@ import {
   logout,
   getCurrentAuth,
 } from "../controllers/auth.js";
-import { authenticateJWT, validateToken } from "../middleware/auth.js";
+import { authenticateJWT } from "../middlewares/auth.js";
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ router.post("/register", register);
 router.post("/login", login);
 
 // Protected routes
-router.post("/logout", [authenticateJWT, validateToken], logout);
-router.get("/me", [authenticateJWT, validateToken], getCurrentAuth);
+router.post("/logout", [authenticateJWT], logout);
+router.get("/me", [authenticateJWT], getCurrentAuth);
 
 export default router;

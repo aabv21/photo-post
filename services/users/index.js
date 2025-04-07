@@ -33,7 +33,7 @@ app.use(debounce); // Add debounce before rate limiter
 app.use(limiter);
 
 // Routes should come after all middleware
-app.use("/api/users", usersRouter);
+app.use("/", usersRouter);
 
 // Health check route
 app.get("/health", (req, res) => {

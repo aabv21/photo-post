@@ -1,6 +1,14 @@
-import { Like } from "../models/like.js";
 import { logger } from "../middlewares/logger.js";
 import { redisClient } from "../config/redis.js";
+
+// Models
+import Like from "../models/likes.js";
+
+// Utils
+import {
+  validateLikeCreation,
+  validatePagination,
+} from "../utils/validators.js";
 
 // Cache TTL in seconds
 const CACHE_TTL = 60 * 5; // 5 minutes
@@ -14,7 +22,18 @@ const CACHE_TTL = 60 * 5; // 5 minutes
 export const getLikesByPostId = async (req, res) => {
   try {
     const { postId } = req.params;
-    const cacheKey = `likes:post:${postId}`;
+
+    // Validate pagination parameters
+    const { error, value } = validatePagination(req.query);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.details[0].message,
+      });
+    }
+
+    const { page, limit } = value;
+    const cacheKey = `likes:post:${postId}:page${page}:limit${limit}`;
 
     // Try to get from cache first
     const cachedLikes = await redisClient.get(cacheKey);
@@ -22,15 +41,24 @@ export const getLikesByPostId = async (req, res) => {
       return res.status(200).json(JSON.parse(cachedLikes));
     }
 
-    const likes = await Like.findAll({
+    const offset = (page - 1) * limit;
+
+    const { count, rows: likes } = await Like.findAndCountAll({
       where: { post_id: postId },
       attributes: ["id", "user_id", "post_id", "created_at"],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
     });
 
     const response = {
       success: true,
       data: likes,
-      count: likes.length,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(count / limit),
+      },
     };
 
     // Cache the result
@@ -106,6 +134,15 @@ export const createLike = async (req, res) => {
     const { postId } = req.params;
     const userId = req.user.id;
 
+    // Validate input
+    const { error } = validateLikeCreation({ postId });
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.details[0].message,
+      });
+    }
+
     // Check if like already exists
     const existingLike = await Like.findOne({
       where: {
@@ -128,7 +165,12 @@ export const createLike = async (req, res) => {
     });
 
     // Invalidate cache
-    await redisClient.del(`likes:post:${postId}`);
+    const likeCachePattern = `likes:post:${postId}:*`;
+    const likeCacheKeys = await redisClient.keys(likeCachePattern);
+    if (likeCacheKeys.length > 0) {
+      await redisClient.del(likeCacheKeys);
+    }
+
     await redisClient.del(`likes:count:post:${postId}`);
     await redisClient.del(`post:${postId}`);
 
